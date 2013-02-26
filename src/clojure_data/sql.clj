@@ -1,4 +1,5 @@
 (ns clojure-data.sql
+  (refer clojure.core :exclude [not or and = < <= > >= cast])
   (require [clojure.string :as string]))
 
 ;; TODO: implement alter table, insert, update, delete
@@ -8,7 +9,10 @@
 (defn- to-fragment [value]
   (cond
     (nil? value)      (SQLFragment. "" [])
-    (keyword? value)  (SQLFragment. (name value) [])
+    (keyword? value)  (SQLFragment. (if (namespace value)
+                                        (str (namespace value) "." (name value))
+                                        (name value))
+                                    [])
     (float? value)    (SQLFragment. (str value) [])
     (integer? value)  (SQLFragment. (str value) [])
     (string? value)   (SQLFragment. (str "'" (string/replace value "'" "''") "'") [])
@@ -30,7 +34,7 @@
   (safe-format "%s %s %s" lhs op rhs))
 
 (defn select [fields & clauses]
-  (safe-format "select %s" (safe-infix "\n" (cons (safe-infix ", "fields) clauses))))
+  (safe-format "select %s" (safe-infix "\n" (cons (safe-infix ", " fields) clauses))))
 
 ;; distinct
 
@@ -69,9 +73,9 @@
   (safe-format "offset %s" n))
 
 ;; infix operations
-(defn || [& args] (safe-infix " || " args))
-(defn or [& clauses] (safe-infix " or " clauses))
-(defn and [& clauses] (safe-infix " and " clauses))
+(defn || [& args] (safe-infix " || " (remove nil? args)))
+(defn or [& clauses] (safe-infix " or " (remove nil? clauses)))
+(defn and [& clauses] (safe-infix " and " (remove nil? clauses)))
 
 ;; binary operations
 (defn as [lhs rhs] (bin-op :as lhs rhs))
