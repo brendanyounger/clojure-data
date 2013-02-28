@@ -1,7 +1,7 @@
 (ns clojure-data.sql
-  (refer clojure.core :exclude [not or and = < <= > >= cast])
   (require [clojure.string :as string]))
 
+;; (refer clojure.core :exclude [not or and = < <= > >= cast])
 ;; TODO: implement alter table, insert, update, delete
 
 (defrecord SQLFragment [^String sql parameters])
@@ -55,7 +55,7 @@
       (safe-format "where %s" clause)
       (SQLFragment. "" [])))
 
-(defn not [clause] (safe-format "not %s" clause))
+(defn sql-not [clause] (safe-format "not %s" clause))
 (defn exists [clause] (safe-format "exists (%s)" clause))
 
 (defn order-by [& fields]
@@ -74,22 +74,22 @@
 
 ;; infix operations
 (defn || [& args] (safe-infix " || " (remove nil? args)))
-(defn or [& clauses] (safe-infix " or " (remove nil? clauses)))
-(defn and [& clauses] (safe-infix " and " (remove nil? clauses)))
+(defn sql-or [& clauses] (safe-infix " or " (remove nil? clauses)))
+(defn sql-and [& clauses] (safe-infix " and " (remove nil? clauses)))
 
 ;; binary operations
 (defn as [lhs rhs] (bin-op :as lhs rhs))
-(defn = [lhs rhs]
+(defn sql-= [lhs rhs]
   (if (nil? rhs)
       (safe-format "%s is null" lhs)
       (bin-op := lhs rhs)))
-(defn < [lhs rhs] (bin-op :< lhs rhs))
-(defn <= [lhs rhs] (bin-op :<= lhs rhs))
-(defn > [lhs rhs] (bin-op :> lhs rhs))
-(defn >= [lhs rhs] (bin-op :>= lhs rhs))
+(defn sql-< [lhs rhs] (bin-op :< lhs rhs))
+(defn sql-<= [lhs rhs] (bin-op :<= lhs rhs))
+(defn sql-> [lhs rhs] (bin-op :> lhs rhs))
+(defn sql->= [lhs rhs] (bin-op :>= lhs rhs))
 (defn like [lhs rhs] (bin-op :like lhs rhs))
 (defn ilike [lhs rhs] (bin-op :ilike lhs rhs))
-(defn cast [arg type]
+(defn sql-cast [arg type]
   (safe-format "%s::%s" arg type))
 
 ;; general functions
