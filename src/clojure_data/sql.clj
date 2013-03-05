@@ -18,13 +18,13 @@
     (string? value)   (SQLFragment. (str "'" (string/replace value "'" "''") "'") [])
     (instance? SQLFragment value) value))
 
-(defn- safe-format [fmt-str & values]
+(defn safe-format [fmt-str & values]
   (let [fragments (map to-fragment values)]
     (SQLFragment.
       (apply format fmt-str (map :sql fragments))
       (apply concat (map :parameters fragments)))))
 
-(defn- safe-infix [infix values]
+(defn safe-infix [infix values]
   (let [fragments (map to-fragment values)]
     (SQLFragment.
       (string/join infix (map :sql fragments))
@@ -60,6 +60,12 @@
 
 (defn order-by [& fields]
   (safe-format "order by %s" (safe-infix ", " fields)))
+
+(defn asc [expr]
+  (safe-format "%s asc"))
+
+(defn desc [expr]
+  (safe-format "%s desc"))
 
 (defn having [clause]
   (safe-format "having %s" clause))
