@@ -62,10 +62,10 @@
   (safe-format "order by %s" (safe-infix ", " fields)))
 
 (defn asc [expr]
-  (safe-format "%s asc"))
+  (safe-format "%s asc" expr))
 
 (defn desc [expr]
-  (safe-format "%s desc"))
+  (safe-format "%s desc" expr))
 
 (defn having [clause]
   (safe-format "having %s" clause))
