@@ -6,12 +6,21 @@
 
 (defrecord SQLFragment [^String sql parameters])
 
+(defn- quote-identifier [^String identifier]
+  (if (re-seq #"\s|\?" identifier)
+      (format "\"%s\"" identifier)
+      identifier))
+
 (defn- to-fragment [value]
   (cond
-    (nil? value)      (SQLFragment. "" [])
+    (= java.lang.Boolean (type value))
+                      (SQLFragment. (str value) [])
+    (nil? value)      (SQLFragment. "null" [])
     (keyword? value)  (SQLFragment. (if (namespace value)
-                                        (str (namespace value) "." (name value))
-                                        (name value))
+                                        (str  (quote-identifier (namespace value))
+                                              "."
+                                              (quote-identifier (name value)))
+                                        (quote-identifier (name value)))
                                     [])
     (float? value)    (SQLFragment. (str value) [])
     (integer? value)  (SQLFragment. (str value) [])
@@ -30,13 +39,17 @@
       (string/join infix (map :sql fragments))
       (apply concat (map :parameters fragments)))))
 
+(defn raw [sql & [params]]
+  (SQLFragment. sql params))
+
 (defn bin-op [op lhs rhs]
   (safe-format "%s %s %s" lhs op rhs))
 
 (defn select [fields & clauses]
   (safe-format "select %s" (safe-infix "\n" (cons (safe-infix ", " fields) clauses))))
 
-;; distinct
+(defn create-table [name & fields]
+  (safe-format "create table %s (%s)" name (safe-infix ",\n" fields)))
 
 (defn ? [parameter]
   (SQLFragment. "?" [parameter]))
@@ -70,12 +83,10 @@
 (defn having [clause]
   (safe-format "having %s" clause))
 
-(defn limit [n]
-  { :pre (integer? n) }
+(defn limit [^Integer n]
   (safe-format "limit %s" n))
 
-(defn offset [n]
-  { :pre (integer? n) }
+(defn offset [^Integer n]
   (safe-format "offset %s" n))
 
 ;; infix operations
