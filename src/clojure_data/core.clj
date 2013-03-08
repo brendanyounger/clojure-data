@@ -28,7 +28,7 @@
 (def db (delay (pooled-datasource db-spec)))
 
 (defn- safe-resultset-seq [^ResultSet resultset]
-  (and resultset (resultset-seq resultset)))
+  (doall (and resultset (resultset-seq resultset))))
 
 (defn- make-prepared-statement [connection sql params]
   (let [statement (.prepareStatement connection sql)]
@@ -42,9 +42,12 @@
 ;; maybe accept a seq of fragments?
 (defn execute [fragment]
   (println fragment)
-  (let [statement (make-prepared-statement  (.getConnection @db)
+  (let [connection (.getConnection @db)
+        statement (make-prepared-statement  connection
                                             (:sql fragment)
                                             (:parameters fragment))
         success   (.execute statement)
-        results   (safe-resultset-seq (.getResultSet statement))]
-    (or results success)))
+        results   (safe-resultset-seq (.getResultSet statement))
+        value     (or results success)]
+    (.close connection)
+    value))

@@ -64,14 +64,12 @@
 (defn upsert! [relation tuple]
   (let [timestep  (tick!)
         log-tuple (merge tuple { :tx timestep :retracted false })]
-
   (execute
     (sql/safe-format
       "insert into %s (%s) values (%s)"
       (:log-name relation)
       (sql/safe-infix ", " (keys log-tuple))
       (sql/safe-infix ", " (vals log-tuple))))
-
   (try
     (execute
       (sql/safe-format
@@ -90,15 +88,32 @@
           (sql/safe-infix ", " (keys tuple))
           (sql/safe-infix ", " (vals tuple))))))))
 
-(defn quondam [relation timestep]
+(defn delete! [relation tuple]
+  (let [timestep (tick!)
+        log-tuple (merge tuple { :tx timestep :retracted true })]
   (execute
     (sql/safe-format
-      "select %s from %s where %s group by %s"
-      (sql/safe-infix ", "
-        (map #(sql/safe-format "first(%s order by tx desc) as %s" % %) (keys (fields relation))))
+      "insert into %s (%s) values (%s)"
       (:log-name relation)
-      (sql/sql-<= :tx timestep)
-      (sql/safe-infix ", " (keys (key-fields relation))))))
+      (sql/safe-infix ", " (keys log-tuple))
+      (sql/safe-infix ", " (vals log-tuple))))
+  (execute
+    (sql/safe-format
+      "delete from %s where %s"
+      (:name relation)
+      (sql/safe-infix ", "
+        (map (fn [[k v]] (sql/sql-= k v)) (select-keys tuple (keys (key-fields relation)))))))))
+
+(defn quondam [relation timestep]
+  (remove :retracted
+    (execute
+      (sql/safe-format
+        "select %s, first(retracted order by tx desc) as retracted from %s where %s group by %s"
+        (sql/safe-infix ", "
+          (map #(sql/safe-format "first(%s order by tx desc) as %s" % %) (keys (fields relation))))
+        (:log-name relation)
+        (sql/sql-<= :tx timestep)
+        (sql/safe-infix ", " (keys (key-fields relation)))))))
 
 ;; hotel_to_location (char(24)? or varchar)
 ;; primary key hotel_tid
@@ -110,15 +125,7 @@
 ;; basics: simple types int, varchar, numeric, float, json, etc.
 ;; add a mapping from fields to clojure data structures
 ;; be able to serialize as json (including id attribute for ember)
-;; add Tx and deleted? fields to the log table
 
-;; state
-;; table_name, current_tx, last_tx (this is the last insert/update/delete on the table, could be less than the current tx globally)
-
-;; table, table_log
-;; move to a given transaction #
-;; select first(a order by tx desc), first(b order by tx desc), first(c order by tx desc), first(deleted? order by tx desc), first(tx order by tx desc) from table_log where tx <= desired_tx group by primary_key_columns;
-;; second step is delete from table_log where deleted? = true?
 ;; third step is update state set current_tx
 ;; but cannot insert or delete facts b/c current_tx != last_tx
 
