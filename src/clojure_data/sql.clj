@@ -47,31 +47,6 @@
 (defn select [fields & clauses]
   (safe-format "select %s" (safe-infix "\n" (cons (safe-infix ", " fields) clauses))))
 
-(defn create-table [table & fields]
-  (safe-format "create table %s (%s)" table (safe-infix ",\n" fields)))
-
-(defn insert [table rows]
-  (let [fields  (keys (first rows))
-        field-names  (map keyword fields)]
-    (safe-format "insert into %s (%s) values %s" table (safe-infix ", " field-names)
-      (safe-infix ",\n"
-        (map
-          #(safe-format "(%s)"
-            (safe-infix ", "
-              (keys-to-vals % fields)))
-          rows)))))
-
-(defn update [table field-to-value & clauses]
-  (safe-format "update %s set %s\n%s"
-    table
-    (safe-infix ",\n" (map (fn [[k v]] (safe-format "%s = %s" k v)) field-to-value))
-    (safe-infix "\n" clauses)))
-
-(defn delete [table & clauses]
-  (safe-format "delete from %s\n%s"
-    table
-    (safe-infix "\n" clauses)))
-
 (defn ? [parameter]
   (SQLFragment. "?" [parameter]))
 
@@ -134,3 +109,44 @@
 ;; general functions
 (defn call [fn-name & args]
   (safe-format "%s(%s)" fn-name (safe-infix ", " args)))
+
+;; table alteration
+(defn create-table [table & fields]
+  (safe-format "create table %s (%s)" table (safe-infix ",\n" fields)))
+
+(defn insert [table rows]
+  (let [fields  (keys (first rows))]
+    (safe-format "insert into %s (%s) values %s" table (safe-infix ", " fields)
+      (safe-infix ",\n"
+        (map
+          #(safe-format "(%s)"
+            (safe-infix ", "
+              (keys-to-vals % fields)))
+          rows)))))
+
+(defn update [table field-to-value & clauses]
+  (safe-format "update %s set %s\n%s"
+    table
+    (safe-infix ",\n" (map (fn [[k v]] (safe-format "%s = %s" k v)) field-to-value))
+    (safe-infix "\n" clauses)))
+
+(defn delete [table & clauses]
+  (safe-format "delete from %s\n%s"
+    table
+    (safe-infix "\n" clauses)))
+
+(defn upsert [table primary-key rows]
+  (let [fields (keys (first rows))]
+    (safe-infix ";\n"
+      (map
+        #(safe-format "%s;\n%s"
+          (update table
+                  (dissoc % primary-key)
+                  (where (equal? primary-key (get % primary-key))))
+          (safe-format "insert into %s (%s)\n%s"
+            table
+            (safe-infix ", " fields)
+            (select (keys-to-vals % fields)
+              (where (not? (exists?
+                (select [1] (from table) (where (equal? primary-key (get % primary-key))))))))))
+        rows))))
