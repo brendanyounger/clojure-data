@@ -1,9 +1,6 @@
 (ns clojure-data.sql
   (require [clojure.string :as string]))
 
-;; (refer clojure.core :exclude [not or and = < <= > >= cast])
-;; TODO: implement alter table, insert, update, delete
-
 (defrecord SQLFragment [^String sql parameters])
 
 (defn- quote-identifier [^String identifier]
@@ -27,6 +24,8 @@
     (string? value)   (SQLFragment. (str "'" (string/replace value "'" "''") "'") [])
     (instance? SQLFragment value) value))
 
+(defn- keys-to-vals [m ks] (map #(m %) ks))
+
 (defn safe-format [fmt-str & values]
   (let [fragments (map to-fragment values)]
     (SQLFragment.
@@ -48,8 +47,30 @@
 (defn select [fields & clauses]
   (safe-format "select %s" (safe-infix "\n" (cons (safe-infix ", " fields) clauses))))
 
-(defn create-table [name & fields]
-  (safe-format "create table %s (%s)" name (safe-infix ",\n" fields)))
+(defn create-table [table & fields]
+  (safe-format "create table %s (%s)" table (safe-infix ",\n" fields)))
+
+(defn insert [table rows]
+  (let [fields  (keys (first rows))
+        field-names  (map keyword fields)]
+    (safe-format "insert into %s (%s) values %s" table (safe-infix ", " field-names)
+      (safe-infix ",\n"
+        (map
+          #(safe-format "(%s)"
+            (safe-infix ", "
+              (keys-to-vals % fields)))
+          rows)))))
+
+(defn update [table field-to-value & clauses]
+  (safe-format "update %s set %s\n%s"
+    table
+    (safe-infix ",\n" (map (fn [[k v]] (safe-format "%s = %s" k v)) field-to-value))
+    (safe-infix "\n" clauses)))
+
+(defn delete [table & clauses]
+  (safe-format "delete from %s\n%s"
+    table
+    (safe-infix "\n" clauses)))
 
 (defn ? [parameter]
   (SQLFragment. "?" [parameter]))
@@ -68,8 +89,8 @@
       (safe-format "where %s" clause)
       (SQLFragment. "" [])))
 
-(defn sql-not [clause] (safe-format "not %s" clause))
-(defn exists [clause] (safe-format "exists (%s)" clause))
+(defn not? [clause] (safe-format "not %s" clause))
+(defn exists? [clause] (safe-format "exists (%s)" clause))
 
 (defn order-by [& fields]
   (safe-format "order by %s" (safe-infix ", " fields)))
@@ -91,23 +112,24 @@
 
 ;; infix operations
 (defn || [& args] (safe-infix " || " (remove nil? args)))
-(defn sql-or [& clauses] (safe-infix " or " (remove nil? clauses)))
-(defn sql-and [& clauses] (safe-infix " and " (remove nil? clauses)))
+(defn or? [& clauses] (safe-infix " or " (remove nil? clauses)))
+(defn and? [& clauses] (safe-infix " and " (remove nil? clauses)))
 
 ;; binary operations
 (defn as [lhs rhs] (bin-op :as lhs rhs))
-(defn sql-= [lhs rhs]
+(defn coerce [arg type] (safe-format "cast %s as %s" arg type))
+
+;; predicates
+(defn equal? [lhs rhs]
   (if (nil? rhs)
       (safe-format "%s is null" lhs)
       (bin-op := lhs rhs)))
-(defn sql-< [lhs rhs] (bin-op :< lhs rhs))
-(defn sql-<= [lhs rhs] (bin-op :<= lhs rhs))
-(defn sql-> [lhs rhs] (bin-op :> lhs rhs))
-(defn sql->= [lhs rhs] (bin-op :>= lhs rhs))
-(defn like [lhs rhs] (bin-op :like lhs rhs))
-(defn ilike [lhs rhs] (bin-op :ilike lhs rhs))
-(defn sql-cast [arg type]
-  (safe-format "%s::%s" arg type))
+(defn lt? [lhs rhs] (bin-op :< lhs rhs))
+(defn lte? [lhs rhs] (bin-op :<= lhs rhs))
+(defn gt? [lhs rhs] (bin-op :> lhs rhs))
+(defn gte? [lhs rhs] (bin-op :>= lhs rhs))
+(defn like? [lhs rhs] (bin-op :like lhs rhs))
+(defn ilike? [lhs rhs] (bin-op :ilike lhs rhs))
 
 ;; general functions
 (defn call [fn-name & args]
