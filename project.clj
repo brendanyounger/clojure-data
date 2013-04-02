@@ -1,4 +1,4 @@
-(defproject clojure-data "0.1.2-SNAPSHOT"
+(defproject clojure-data "0.1.3"
   :description "Clojure-data is a simple, straightforward library for handling SQL, database connections, and data typing in Clojure"
 
   :url "https://github.com/brendanyounger/clojure-data"

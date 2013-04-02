@@ -4,18 +4,12 @@
           [com.mchange.v2.c3p0 ComboPooledDataSource]))
 
 ; (def db-spec
-;   { :classname "org.sqlite.JDBC"
-;     :subprotocol "sqlite"
-;     :subname "/Users/brendanyounger/test.db"
-;     :user nil
-;     :password nil
+;   { :classname "org.postgresql.Driver"
+;     :subprotocol "postgresql"
+;     :subname "//localhost/postgres"
 ;   })
 
-(def db-spec
-  { :classname "org.postgresql.Driver"
-    :subprotocol "postgresql"
-    :subname "//localhost/postgres"
-  })
+; (def db (delay (pooled-datasource db-spec)))
 
 (defn pooled-datasource
   [{:keys [classname subprotocol subname user password]}]
@@ -25,10 +19,8 @@
          (.setUser user)
          (.setPassword password)))
 
-(def db (delay (pooled-datasource db-spec)))
-
 (defn- safe-resultset-seq [^ResultSet resultset]
-  (doall (and resultset (resultset-seq resultset))))
+  (doall (resultset-seq resultset)))
 
 (defn- make-prepared-statement [connection sql params]
   (let [statement (.prepareStatement connection sql)]
@@ -40,14 +32,14 @@
     statement))
 
 ;; maybe accept a seq of fragments?
-(defn execute [fragment]
-  (println fragment)
-  (let [connection (.getConnection @db)
-        statement (make-prepared-statement  connection
-                                            (:sql fragment)
-                                            (:parameters fragment))
-        success   (.execute statement)
-        results   (safe-resultset-seq (.getResultSet statement))
-        value     (or results success)]
+(defn execute [datasource fragment]
+  (let [connection  (.getConnection datasource)
+        statement   (make-prepared-statement  connection
+                                              (:sql fragment)
+                                              (:parameters fragment))
+        resultset?  (.execute statement)
+        value       (if resultset?
+                        (safe-resultset-seq (.getResultSet statement))
+                        (.getUpdateCount statement))]
     (.close connection)
     value))

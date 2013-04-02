@@ -2,6 +2,7 @@
   (require [clojure.string :as string]))
 
 (defrecord SQLFragment [^String sql parameters])
+(defrecord SQLType [^SQLFragment storage ^Boolean allow-nil? default ^SQLFragment validator ->clojure ->storage])
 
 (defn- quote-identifier [^String identifier]
   (if (re-seq #"\s|\?" identifier)
@@ -10,7 +11,7 @@
 
 (defn- to-fragment [value]
   (cond
-    (= java.lang.Boolean (type value))
+    (instance? Boolean value)
                       (SQLFragment. (str value) [])
     (nil? value)      (SQLFragment. "null" [])
     (keyword? value)  (SQLFragment. (if (namespace value)
@@ -38,7 +39,7 @@
       (string/join infix (map :sql fragments))
       (apply concat (map :parameters fragments)))))
 
-(defn raw [sql & [params]]
+(defn raw [sql & params]
   (SQLFragment. sql params))
 
 (defn bin-op [op lhs rhs]
@@ -92,7 +93,11 @@
 
 ;; binary operations
 (defn as [lhs rhs] (bin-op :as lhs rhs))
-(defn coerce [arg type] (safe-format "cast %s as %s" arg type))
+(defn coerce [arg type] (safe-format "cast(%s as %s)" arg type))
+(defn add [lhs rhs] (bin-op :+ lhs rhs))
+(defn sub [lhs rhs] (bin-op :- lhs rhs))
+(defn mul [lhs rhs] (bin-op :* lhs rhs))
+(defn div [lhs rhs] (bin-op (keyword "/") lhs rhs))
 
 ;; predicates
 (defn equal? [lhs rhs]
@@ -109,6 +114,9 @@
 ;; general functions
 (defn call [fn-name & args]
   (safe-format "%s(%s)" fn-name (safe-infix ", " args)))
+
+(defn coalesce [& args]
+  (apply call :coalesce args))
 
 ;; table alteration
 (defn create-table [table & fields]
@@ -135,6 +143,7 @@
     table
     (safe-infix "\n" clauses)))
 
+;; TODO: support multiple primary keys?
 (defn upsert [table primary-key rows]
   (let [fields (keys (first rows))]
     (safe-infix ";\n"
