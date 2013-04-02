@@ -60,6 +60,9 @@
 (defn left-join [table-name]
   (safe-format "left join %s" table-name))
 
+(defn on [clause]
+  (safe-format "on %s" clause))
+
 (defn where [clause]
   (if clause
       (safe-format "where %s" clause)
