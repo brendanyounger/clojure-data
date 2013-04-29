@@ -1,4 +1,8 @@
-(ns clojure-data.peg)
+(ns clojure-data.peg
+  (require [taoensso.timbre :refer [trace info]]
+           [taoensso.timbre.profiling :refer [p]]))
+
+;; (timbre/set-level! :warn)
 
 (comment
   "This implementation closely follows [A Text Pattern-Matching Tool based on Parsing Expression Grammars](http://www.inf.puc-rio.br/~roberto/docs/peg.pdf)")
@@ -9,43 +13,57 @@
 (defn regexp [re]
   [[:regexp (re-pattern (str "\\A" (.toString re)))]])
 
-(defn any [] [:any])
+(defn any [] [[:any]])
 
-(defn choice [lhs rhs]
+(defn- foldr [f coll]
+  (reduce (fn [x y] (f y x)) (reverse coll)))
+
+(defn- choose2 [lhs rhs]
   (concat
     [[:choice (+ (count lhs) 2)]]
     lhs
     [[:commit (+ (count rhs) 1)]]
     rhs))
 
+(defn choice [& options]
+  (foldr choose2 options))
+
 (defn rep* [pattern]
   (concat
     [[:choice (+ (count pattern) 2)]]
     pattern
-    [[:commit (- (inc (count pattern)))]]))
+    [[:partial-commit (- (count pattern))]]))
 
 (defn peek-not [pattern]
   (concat
-    [[:choice (+ (count pattern) 3)]]
+    [[:choice (+ (count pattern) 2)]]
     pattern
-    [[:commit 1]]
-    [[:fail]]))
+    [[:fail-twice]]))
 
 (defn peek-and [pattern]
   (concat
-    [[:choice (+ (count pattern) 4)]]
-    [[:choice (+ (count pattern) 1)]]
+    [[:choice (+ (count pattern) 2)]]
     pattern
-    [[:commit 1]]
+    [[:back-commit 2]]
     [[:fail]]))
 
 (defn call [rule]
   [[:call rule]])
 
-;; TODO: do tail call opt by replacing :call, :return seqs with :jump
 ;; TODO: check for loops: symbolically check if pattern accepts the empty string
+(defn rule [& patterns]
+  (concat
+    (mapcat
+      #(condp instance? %
+        String                  (literal %)
+        clojure.lang.Keyword    (call %)
+        java.util.regex.Pattern (regexp %)
+        %)
+      patterns)))
+
+;; TODO: do tail call opt by replacing :call, :return seqs with :jump
 (defn grammar [start rule-set]
-  (let [program
+  (let [{:keys [code symbol-table]}
         (reduce
           (fn [program [name pattern]]
             { :code
@@ -58,42 +76,53 @@
             })
           { :code [[:call start] [:jump nil]] :symbol-table {} }
           rule-set)]
+  (map #(if (= :call (first %))
+            [:call (symbol-table (second %))] ;; TODO: throw here if not found
+            %)
     ;; replace the [:jump nil] with the offset to the [:end] instruction at the end of the code
-  { :code (concat (assoc-in (vec (:code program)) [1 1] (dec (count (:code program)))) [[:end]])
-    :symbol-table (:symbol-table program) }))
+    (concat (assoc-in (vec code) [1 1] (dec (count code))) [[:end]]))))
 
-(defn empty-state [] { :pc 0 :ic 0 :stack [] :captures nil })
-
-(defn parse [{ pc :pc ic :ic stack :stack captures :captures }
-             { code :code symbol-table :symbol-table :as program}
-             input]
-  (let [next-state
-  (if (nil? pc) ;; fail
+;; NB: this is not noticeably faster with transients for the stack
+(defn parse [code input]
+  (loop [pc 0
+         ic 0
+         stack []
+         captures []]
+    (if (nil? pc) ;; fail
       (if (integer? (first stack))
-          { :pc nil :ic ic :stack (rest stack) :captures captures }
+          (recur nil ic (rest stack) captures)
           (if (empty? stack)
               "error"
-              { :pc (ffirst stack) :ic (second (first stack)) :stack (rest stack) :captures (nth (first stack) 2) }))
+              (recur (ffirst stack) (second (first stack)) (rest stack) (nth (first stack) 2))))
       (let [inst (nth code pc)]
-        (println inst)
+        ;; (trace inst)
         (case (first inst)
-          ;; TODO: guard against going past bounds of string here...
-          :char (if (= (second inst) (.charAt input ic))
-                    { :pc (inc pc) :ic (inc ic) :stack stack :captures captures }
-                    { :pc nil :ic ic :stack stack :captures captures })
-          :regexp (if (re-find (second inst) (.substring input ic))
-                      { :pc (inc pc) :ic (+ ic (count (re-find (second inst) (.substring input ic)))) :stack stack :captures captures }
-                      { :pc nil :ic ic :stack stack :captures captures })
-          :jump { :pc (+ pc (second inst)) :ic ic :stack stack :captures captures }
-          :choice { :pc (inc pc) :ic ic :stack (cons [(+ pc (second inst)) ic captures] stack) :captures captures }
-          :call { :pc (symbol-table (second inst)) :ic ic :stack (cons (inc pc) stack) :captures captures }
-          :return { :pc (first stack) :ic ic :stack (rest stack) :captures captures }
-          :commit { :pc (+ pc (second inst)) :ic ic :stack (rest stack) :captures captures }
-          :capture { :pc (inc pc) :ic ic :stack stack :captures (cons [ic pc] captures) }
-          :fail { :pc nil :ic ic :stack stack :captures captures }
-          :end "success")))
-  ]
-  (println next-state)
-  (if (string? next-state) next-state (recur next-state program input))))
-
-(def g (grammar :S { :S (concat (choice (call :B) (regexp #"[^()]"))) :B (concat (literal "(") (call :S) (literal ")")) }))
+          :char
+                  (if (and (< ic (count input)) (= (second inst) (.charAt input ic)))
+                      (recur (inc pc) (inc ic) stack captures)
+                      (recur nil ic stack captures))
+          :string
+                  (if (and (< ic (count input)) (.startsWith input (second inst) ic))
+                      (recur (inc pc) (+ ic (count (second inst))) stack captures)
+                      (recur nil ic stack captures))
+          :regexp (if (< ic (count input))
+                      (if-let [match (re-find (second inst) (.substring input ic))]
+                              (recur (inc pc) (+ ic (count match)) stack captures)
+                              (recur nil ic stack captures))
+                      (recur nil ic stack captures))
+          :any    (if (< ic (count input))
+                      (recur (inc pc) (inc ic) stack captures)
+                      (recur nil ic stack captures))
+          :jump     (recur (+ pc (second inst)) ic stack captures)
+          :choice   (recur (inc pc) ic (cons [(+ pc (second inst)) ic captures] stack) captures)
+          :call     (recur (second inst) ic (cons (inc pc) stack) captures)
+          :return   (recur (first stack) ic (rest stack) captures)
+          :commit   (recur (+ pc (second inst)) ic (rest stack) captures)
+          :capture  (recur (inc pc) ic stack (cons [ic pc] captures))
+          :fail     (recur nil ic stack captures)
+          :end      "success"
+          :partial-commit (recur (+ pc (second inst)) ic (cons [ (ffirst stack) ic captures ] (rest stack)) captures)
+          :fail-twice   (recur nil ic (rest stack) captures)
+          :back-commit  (recur (+ pc (second inst)) (second (first stack)) (rest stack) (nth (first stack) 2))
+          ;; TODO: do testchar optimizations here
+          )))))

@@ -12,5 +12,6 @@
                  [org.xerial/sqlite-jdbc "3.7.2"]
                  [postgresql/postgresql "9.1-901-1.jdbc4"]
                  ;; [mysql/mysql-connector-java "5.1.6"]
+                 [com.taoensso/timbre "1.6.0"]
                  [clojure-csv "2.0.0-alpha2"]
                  [instaparse "1.0.1"]])
