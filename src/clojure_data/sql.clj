@@ -54,6 +54,10 @@
 (defn from [table-name]
   (safe-format "from %s" table-name))
 
+(defn union [subselects & clauses]
+  (safe-infix "\n"
+    (cons (safe-infix "\nunion\n" subselects) clauses)))
+
 (defn join [table-name]
   (safe-format "join %s" table-name))
 
@@ -70,6 +74,7 @@
 
 (defn not? [clause] (safe-format "not %s" clause))
 (defn exists? [clause] (safe-format "exists (%s)" clause))
+(defn in? [expr coll] (safe-format "%s in (%s)" expr (safe-infix ", " coll)))
 
 (defn order-by [& fields]
   (safe-format "order by %s" (safe-infix ", " fields)))
